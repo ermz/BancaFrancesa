@@ -17,11 +17,24 @@ pragma solidity >=0.8.13 <0.9.0;
 // All losing wagers are collected by Banca
 
 
+/*
+    Potential idea to use both chainlink keepers and random number
+
+    Use chainlink keepers in order to run Request random numbers, but get a quite a couple of random numbers
+    It would be more cost effective than running RequestRandomRoll every single time
+    Chainlink keeper will only run once the requestId array is at a low enough length
+
+      
+*/
+
+
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./BancaHelper.sol";
 
 import '@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol';
 import '@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol';
+
+import '@chainlink/contracts/src/v0.8/KeeperCompatible.sol';
 
 
 contract Banca is VRFConsumerBaseV2, Ownable {
@@ -68,7 +81,7 @@ contract Banca is VRFConsumerBaseV2, Ownable {
         s_lastRoll = rollAmount;
     }
 
-    function playFrancesa(Wagers _wager) payable public {
+    function playFrancesa(uint256 _wager) payable public {
         require(msg.value > 100);
         uint256 amountWon;
 
@@ -82,22 +95,22 @@ contract Banca is VRFConsumerBaseV2, Ownable {
             break;
         }
 
-        if (sumResult >= 14 && sumResult <= 16 && uint256(_wager) >= 14 && uint256(_wager) <= 16) {
+        if (sumResult >= 14 && sumResult <= 16 && Wagers(_wager) == Wagers.HIGH) {
             // Pay one to one + some token
             // Percentage based on amount bet
             amountWon = msg.value * 2;
             payable(msg.sender).transfer(amountWon);
-        } else if (sumResult >= 5 && sumResult <= 7 && uint256(_wager) >= 5 && uint256(_wager) <= 7) {
+        } else if (sumResult >= 5 && sumResult <= 7 && Wagers(_wager) == Wagers.LOW) {
             // Pay one to one + some token
             // Percentage based on amount bet
             amountWon = msg.value * 2;
             payable(msg.sender).transfer(amountWon);
-        } else if (sumResult == 3 && uint256(_wager) == 3) {
+        } else if (sumResult == 3 && Wagers(_wager) == Wagers.ACES) {
             amountWon = msg.value * 61;
             payable(msg.sender).transfer(amountWon);
         }
 
-        emit GameResult(msg.sender, _wager, amountWon);
+        emit GameResult(msg.sender, Wagers(_wager), amountWon);
     }
 
 }
