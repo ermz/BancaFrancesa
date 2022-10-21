@@ -34,25 +34,28 @@ import "./BancaHelper.sol";
 import '@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol';
 import '@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol';
 
-import '@chainlink/contracts/src/v0.8/KeeperCompatible.sol';
+import '@chainlink/contracts/src/v0.8/AutomationCompatible.sol';
 
+error Upkeep__NotNeeded(uint256 arrayLength);
 
-contract Banca is VRFConsumerBaseV2, Ownable {
+contract Banca is VRFConsumerBaseV2, AutomationCompatibleInterface, Ownable {
     enum Wagers { HIGH, LOW, ACES }
 
     address payable bancaOwner;
     uint256 private s_lastRoll;
+    uint256[] private randomNums;
 
     // Chainlink variables
     uint64 s_subscriptionId;
     bytes32 s_keyHash;
     uint32 callbackGasLimit = 100000;
-    uint16 requestConfirmations = 3;
+    uint16 requestConfirmations = 10;
     uint32 constant RANDOM_VALUES = 3; // Three dice values
 
     VRFCoordinatorV2Interface COORDINATOR;
 
     event GameResult(address player, Wagers wager, uint256 amountWon);
+    event RequestRandomNums(uint256 requestId);
 
     constructor(uint64 subscriptionId, bytes32 keyHash) VRFConsumerBaseV2(0x2Ca8E0C643bDe4C2E08ab1fA0da3401AdAD7734D) {
         s_subscriptionId = subscriptionId;
@@ -62,15 +65,15 @@ contract Banca is VRFConsumerBaseV2, Ownable {
         COORDINATOR = VRFCoordinatorV2Interface(0x2Ca8E0C643bDe4C2E08ab1fA0da3401AdAD7734D);
     }
 
-    function requestRandomRoll() internal onlyOwner returns (uint256 requestId){
-        requestId = COORDINATOR.requestRandomWords(
-            s_keyHash,
-            s_subscriptionId,
-            requestConfirmations,
-            callbackGasLimit,
-            RANDOM_VALUES
-        );
-    }
+    // function requestRandomRoll() internal onlyOwner returns (uint256 requestId){
+    //     requestId = COORDINATOR.requestRandomWords(
+    //         s_keyHash,
+    //         s_subscriptionId,
+    //         requestConfirmations,
+    //         callbackGasLimit,
+    //         RANDOM_VALUES
+    //     );
+    // }
 
     function fulfillRandomWords(uint256 /* _requestId */, uint256[] memory _randomWords) internal override {
         // Number of sides on a dice 6
@@ -79,6 +82,30 @@ contract Banca is VRFConsumerBaseV2, Ownable {
         // Add three values to calculate result from roll
         uint256 rollAmount = (_randomWords[0] % 6 + 1) + (_randomWords[1] % 6 + 1) + (_randomWords[2] % 6 + 1);
         s_lastRoll = rollAmount;
+    }
+
+    function checkUpkeep(bytes memory /* checkData */) public override returns (bool upkeepNeeded, bytes memory /* performData */) {
+        // Checks that there are less than 50 randon numbers in randomNums array
+        bool lowRandomNums = randomNums.length < 50;
+        upkeepNeeded = (lowRandomNums);
+    }
+
+    function performUpkeep(bytes calldata /* performData */) external override {
+        (bool upkeepNeeded,) = checkUpkeep("");
+
+        if(!upkeepNeeded) {
+            revert Upkeep__NotNeeded(randomNums.length);
+        }
+
+        uint256 requestId = COORDINATOR.requestRandomWords(
+            s_keyHash,
+            s_subscriptionId,
+            requestConfirmations,
+            callbackGasLimit,
+            RANDOM_VALUES
+        );
+        emit RequestRandomNums(requestId);
+        // Should add 100 random nums to randomNums array
     }
 
     function playFrancesa(uint256 _wager) payable public {
@@ -90,8 +117,11 @@ contract Banca is VRFConsumerBaseV2, Ownable {
         // Code will run while sumResult doesn't equal 3(Aces), 5-7(Low) or 14-16(High)
         // added break temporarily, to not loop nonstop
         while (sumResult >= 3 || sumResult >= 5 && sumResult <= 7 || sumResult >= 14 && sumResult <= 16) {
-            requestRandomRoll();
-            sumResult = s_lastRoll;
+            // requestRandomRoll();
+            // Adds last three numbers in randomNums array
+            sumResult = randomNums[randomNums.length - 1] + randomNums[randomNums.length - 2] + randomNums[randomNums.length - 3];
+            // Will delete last three number in randomNums array
+            removeLastThree();
             break;
         }
 
@@ -112,5 +142,13 @@ contract Banca is VRFConsumerBaseV2, Ownable {
 
         emit GameResult(msg.sender, Wagers(_wager), amountWon);
     }
+
+    // Helper Functions
+    function removeLastThree() public {
+        randomNums.pop();
+        randomNums.pop();
+        randomNums.pop();
+    }
+
 
 }
