@@ -44,6 +44,7 @@ contract Banca is VRFConsumerBaseV2, AutomationCompatibleInterface, Ownable {
     address payable bancaOwner;
     uint256 private s_lastRoll;
     uint256[] private randomNums;
+    mapping (address => uint256) playerBalance;
 
     // Chainlink variables
     uint64 s_subscriptionId;
@@ -56,6 +57,7 @@ contract Banca is VRFConsumerBaseV2, AutomationCompatibleInterface, Ownable {
 
     event GameResult(address player, Wagers wager, uint256 amountWon);
     event RequestRandomNums(uint256 requestId);
+    event WithdrawWinnings(address player, uint256 amount);
 
     constructor(uint64 subscriptionId, bytes32 keyHash) VRFConsumerBaseV2(0x2Ca8E0C643bDe4C2E08ab1fA0da3401AdAD7734D) {
         s_subscriptionId = subscriptionId;
@@ -80,8 +82,11 @@ contract Banca is VRFConsumerBaseV2, AutomationCompatibleInterface, Ownable {
         // RandomNum % 6 will equal a number between 0 and 5
         // Add by 1 to get a number between 1 and 6
         // Add three values to calculate result from roll
-        uint256 rollAmount = (_randomWords[0] % 6 + 1) + (_randomWords[1] % 6 + 1) + (_randomWords[2] % 6 + 1);
-        s_lastRoll = rollAmount;
+
+        // Add all 100 dice rolls to randomNums array
+        for (uint256 i = 0; i < _randomWords.length; i++) {
+            randomNums.push(_randomWords[i] % 6 + 1);
+        }
     }
 
     function checkUpkeep(bytes memory /* checkData */) public override returns (bool upkeepNeeded, bytes memory /* performData */) {
@@ -122,25 +127,32 @@ contract Banca is VRFConsumerBaseV2, AutomationCompatibleInterface, Ownable {
             sumResult = randomNums[randomNums.length - 1] + randomNums[randomNums.length - 2] + randomNums[randomNums.length - 3];
             // Will delete last three number in randomNums array
             removeLastThree();
-            break;
         }
 
         if (sumResult >= 14 && sumResult <= 16 && Wagers(_wager) == Wagers.HIGH) {
             // Pay one to one + some token
             // Percentage based on amount bet
             amountWon = msg.value * 2;
-            payable(msg.sender).transfer(amountWon);
+            playerBalance[msg.sender] += amountWon;
         } else if (sumResult >= 5 && sumResult <= 7 && Wagers(_wager) == Wagers.LOW) {
             // Pay one to one + some token
             // Percentage based on amount bet
             amountWon = msg.value * 2;
-            payable(msg.sender).transfer(amountWon);
+            playerBalance[msg.sender] += amountWon;
         } else if (sumResult == 3 && Wagers(_wager) == Wagers.ACES) {
             amountWon = msg.value * 61;
-            payable(msg.sender).transfer(amountWon);
+            playerBalance[msg.sender] += amountWon;
         }
 
         emit GameResult(msg.sender, Wagers(_wager), amountWon);
+    }
+
+    function withdrawBalance() external onlyOwner() {
+        // Withdraw all available funds to player
+        uint256 totalAmountWon = playerBalance[msg.sender];
+        playerBalance[msg.sender] = 0;
+        payable(msg.sender).transfer(totalAmountWon);
+        emit WithdrawWinnings(msg.sender, totalAmountWon);
     }
 
     // Helper Functions
